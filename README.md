@@ -35,8 +35,8 @@
 
 ```
 ┌─────────────────┐     ┌─────────────────────┐     ┌──────────────────┐
-│   tg-runner-cli │────▶│  tg-runner-         │────▶│  tg-runner-      │
-│                 │     │  orchestrator       │     │  worker          │
+│   tg-runner     │────▶│  tg-runner-         │────▶│  tg-runner-      │
+│   (CLI)         │     │  orchestrator       │     │  worker          │
 └─────────────────┘     └─────────────────────┘     └──────────────────┘
                                                             │
                                                             ▼
@@ -52,12 +52,9 @@
 ## 📦 Установка
 
 ```bash
-pip install tg-runner-orchestrator
-```
-
-Или Docker:
-```bash
-docker pull ghcr.io/timaxlacs/tg-runner-orchestrator:latest
+git clone https://github.com/TimaxLacs/tg-runner-orchestrator.git
+cd tg-runner-orchestrator
+pip install -e .
 ```
 
 ---
@@ -99,6 +96,7 @@ async def main():
     engine.register_blueprint(blueprint)
     
     await engine.start()
+    print("Orchestrator running on http://0.0.0.0:8000")
 
 asyncio.run(main())
 ```
@@ -135,7 +133,7 @@ async def done(context: JobContext):
 |------------|----------|--------------|
 | `REDIS_HOST` | Хост Redis | `localhost` |
 | `REDIS_PORT` | Порт Redis | `6379` |
-| `API_PORT` | Порт API | `8080` |
+| `API_PORT` | Порт API | `8000` |
 | `CLIENT_TOKEN` | Токен клиентов | — |
 | `GLOBAL_WORKER_TOKEN` | Токен воркеров | — |
 
