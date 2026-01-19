@@ -1,7 +1,9 @@
 version: '3.8'
 
+# Полный стек: Orchestrator + Redis + Worker (всё на одном сервере)
+# ПЕРЕД ИСПОЛЬЗОВАНИЕМ: git clone https://github.com/TimaxLacs/tg-runner-worker.git bot_runner_worker
+
 services:
-  # Redis для хранения состояний
   redis:
     image: redis:7-alpine
     ports:
@@ -13,8 +15,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
+    restart: unless-stopped
 
-  # Оркестратор Avtomatika
   orchestrator:
     build:
       context: .
@@ -24,8 +26,8 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - CLIENT_TOKEN=test-client-token
-      - GLOBAL_WORKER_TOKEN=test-worker-token
+      - CLIENT_TOKEN=${CLIENT_TOKEN:-test-client-token}
+      - GLOBAL_WORKER_TOKEN=${WORKER_TOKEN:-test-worker-token}
       - RATE_LIMITING_ENABLED=false
       - LOG_LEVEL=INFO
     depends_on:
@@ -36,35 +38,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
+    restart: unless-stopped
 
-  # Bot Runner Worker
   bot-runner-worker:
     build:
       context: ./bot_runner_worker
       dockerfile: Dockerfile
     environment:
       - ORCHESTRATOR_URL=http://orchestrator:8000
-      - WORKER_TOKEN=test-worker-token
+      - WORKER_TOKEN=${WORKER_TOKEN:-test-worker-token}
       - WORKER_ID=bot-runner-1
       - WORKER_TYPE=bot-runner
       - MAX_BOTS_PER_USER=3
-      - DOCKER_NETWORK=avtomatika_bot_runner_network
+      - DOCKER_NETWORK=tg_runner_bot_network
     volumes:
-      # Доступ к Docker socket для управления контейнерами
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       orchestrator:
         condition: service_healthy
     networks:
       - default
-      - bot_runner_network
+      - bot_network
+    restart: unless-stopped
 
 networks:
   default:
     driver: bridge
-  bot_runner_network:
-    name: avtomatika_bot_runner_network
+  bot_network:
+    name: tg_runner_bot_network
     driver: bridge
 
 volumes:

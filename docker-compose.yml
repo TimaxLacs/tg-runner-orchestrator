@@ -1,0 +1,47 @@
+version: '3.8'
+
+# Основной docker-compose для запуска Orchestrator + Redis
+# Для воркера используйте отдельный сервер или docker-compose.full.yml
+
+services:
+  # Redis для хранения состояний
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # Оркестратор
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CLIENT_TOKEN=${CLIENT_TOKEN:-test-client-token}
+      - GLOBAL_WORKER_TOKEN=${WORKER_TOKEN:-test-worker-token}
+      - RATE_LIMITING_ENABLED=false
+      - LOG_LEVEL=INFO
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/_public/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  redis_data:

@@ -10,24 +10,57 @@
 **State-Machine Orchestrator для запуска Telegram-ботов в Docker**
 
 [Быстрый старт](#-быстрый-старт) •
-[Blueprints](#-blueprints) •
-[Workers](#-workers) •
-[Документация](#-документация)
+[Архитектура](#️-архитектура) •
+[Конфигурация](#️-конфигурация)
 
 </div>
 
 ---
 
-## ✨ Возможности
+## 🚀 Быстрый старт
 
-| Возможность | Описание |
-|-------------|----------|
-| 🔄 **State Machine** | Декларативное описание workflow |
-| 👷 **Distributed Workers** | Масштабируемая обработка задач |
-| 🐳 **Docker Integration** | Запуск ботов в изолированных контейнерах |
-| 🔁 **Auto-Retry** | Автоматические повторы при ошибках |
-| 📊 **Observability** | Prometheus метрики, OpenTelemetry |
-| 🔒 **Security** | Аутентификация, лимиты, квоты |
+### Вариант 1: Только Orchestrator (воркер на другом сервере)
+
+```bash
+git clone https://github.com/TimaxLacs/tg-runner-orchestrator.git
+cd tg-runner-orchestrator
+
+# Запускаем Redis + Orchestrator
+docker-compose up -d
+
+# Проверяем
+curl http://localhost:8000/_public/status
+# {"status": "ok"}
+```
+
+Затем на **другом сервере** запустите воркер:
+```bash
+git clone https://github.com/TimaxLacs/tg-runner-worker.git
+cd tg-runner-worker
+pip install -e .
+
+export ORCHESTRATOR_URL=http://ORCHESTRATOR_SERVER_IP:8000
+export WORKER_TOKEN=test-worker-token
+python -m bot_runner_worker
+```
+
+---
+
+### Вариант 2: Всё на одном сервере
+
+```bash
+git clone https://github.com/TimaxLacs/tg-runner-orchestrator.git
+cd tg-runner-orchestrator
+
+# Клонируем воркер в поддиректорию
+git clone https://github.com/TimaxLacs/tg-runner-worker.git bot_runner_worker
+
+# Запускаем полный стек
+docker-compose -f docker-compose.full.yml up -d
+
+# Проверяем
+curl http://localhost:8000/_public/status
+```
 
 ---
 
@@ -37,134 +70,87 @@
 ┌─────────────────┐     ┌─────────────────────┐     ┌──────────────────┐
 │   tg-runner     │────▶│  tg-runner-         │────▶│  tg-runner-      │
 │   (CLI)         │     │  orchestrator       │     │  worker          │
+│                 │     │  (этот репо)        │     │  (другой сервер) │
 └─────────────────┘     └─────────────────────┘     └──────────────────┘
-                                                            │
-                                                            ▼
-                                                    ┌──────────────┐
-                                                    │   Docker     │
-                                                    │  Containers  │
-                                                    │  (ваши боты) │
-                                                    └──────────────┘
-```
-
----
-
-## 📦 Установка
-
-```bash
-git clone https://github.com/TimaxLacs/tg-runner-orchestrator.git
-cd tg-runner-orchestrator
-pip install -e .
-```
-
----
-
-## 🚀 Быстрый старт
-
-### Docker Compose (рекомендуется)
-
-```bash
-# Клонируем
-git clone https://github.com/TimaxLacs/tg-runner-orchestrator.git
-cd tg-runner-orchestrator
-
-# Запускаем
-docker-compose -f docker-compose.bot-runner.yml up -d
-
-# Проверяем
-curl http://localhost:8000/_public/status
-```
-
-### Программно
-
-```python
-import asyncio
-from avtomatika import OrchestratorEngine, Config
-from avtomatika.storage.redis import RedisStorage
-from avtomatika.blueprints.bot_runner import blueprint
-from redis.asyncio import Redis
-
-async def main():
-    config = Config()
-    config.CLIENT_TOKEN = "your-token"
-    config.GLOBAL_WORKER_TOKEN = "worker-token"
-    
-    redis = Redis(host="localhost", port=6379)
-    storage = RedisStorage(redis)
-    
-    engine = OrchestratorEngine(config=config, storage=storage)
-    engine.register_blueprint(blueprint)
-    
-    await engine.start()
-    print("Orchestrator running on http://0.0.0.0:8000")
-
-asyncio.run(main())
-```
-
----
-
-## 📘 Blueprints
-
-Blueprint — это workflow в виде конечного автомата:
-
-```python
-from avtomatika import StateMachineBlueprint, JobContext
-
-workflow = StateMachineBlueprint("my_workflow", api_endpoint="/jobs/my")
-
-@workflow.state("init", is_start=True)
-async def start(context: JobContext):
-    context.actions.dispatch_task(
-        task_type="process",
-        params={"data": context.initial_data},
-        transitions={"success": "done", "failure": "error"}
-    )
-
-@workflow.state("done", is_end=True)
-async def done(context: JobContext):
-    pass
+       │                         │                          │
+       │                         │                          ▼
+       │                    ┌────┴────┐              ┌──────────────┐
+       │                    │  Redis  │              │   Docker     │
+       │                    └─────────┘              │  Containers  │
+       │                                             └──────────────┘
+       │
+   pip install tg-runner-cli
 ```
 
 ---
 
 ## ⚙️ Конфигурация
 
+### Переменные окружения
+
 | Переменная | Описание | По умолчанию |
 |------------|----------|--------------|
 | `REDIS_HOST` | Хост Redis | `localhost` |
 | `REDIS_PORT` | Порт Redis | `6379` |
+| `CLIENT_TOKEN` | Токен для CLI/клиентов | `test-client-token` |
+| `GLOBAL_WORKER_TOKEN` | Токен для воркеров | `test-worker-token` |
 | `API_PORT` | Порт API | `8000` |
-| `CLIENT_TOKEN` | Токен клиентов | — |
-| `GLOBAL_WORKER_TOKEN` | Токен воркеров | — |
+| `LOG_LEVEL` | Уровень логов | `INFO` |
+
+### Использование своих токенов
+
+```bash
+# Создайте .env файл
+cat > .env << EOF
+CLIENT_TOKEN=my-secret-client-token
+WORKER_TOKEN=my-secret-worker-token
+EOF
+
+# Запустите с этими токенами
+docker-compose up -d
+```
+
+---
+
+## 📁 Файлы docker-compose
+
+| Файл | Описание |
+|------|----------|
+| `docker-compose.yml` | Redis + Orchestrator (воркер отдельно) |
+| `docker-compose.full.yml` | Полный стек включая воркер |
 
 ---
 
 ## 🔗 Экосистема TG Runner
 
-| Компонент | Описание |
-|-----------|----------|
-| [tg-runner-orchestrator](https://github.com/TimaxLacs/tg-runner-orchestrator) | Orchestrator (этот репо) |
-| [tg-runner-worker](https://github.com/TimaxLacs/tg-runner-worker) | Worker для Docker |
-| [tg-runner-cli](https://github.com/TimaxLacs/tg-runner-cli) | CLI для пользователей |
+| Компонент | Описание | Установка |
+|-----------|----------|-----------|
+| [tg-runner-orchestrator](https://github.com/TimaxLacs/tg-runner-orchestrator) | Этот репозиторий | `docker-compose up` |
+| [tg-runner-worker](https://github.com/TimaxLacs/tg-runner-worker) | Worker для Docker | `pip install -e .` |
+| [tg-runner-cli](https://github.com/TimaxLacs/tg-runner-cli) | CLI | `pip install tg-runner-cli` |
+| [tg-runner-worker-sdk](https://github.com/TimaxLacs/tg-runner-worker-sdk) | SDK для воркеров | `pip install tg-runner-worker-sdk` |
 
 ---
 
-## 📁 Структура
+## 🧪 Тестирование
 
-```
-tg-runner-orchestrator/
-├── src/avtomatika/
-│   ├── engine.py           # Движок
-│   ├── blueprint.py        # Blueprints
-│   ├── executor.py         # Job executor
-│   ├── dispatcher.py       # Task dispatcher
-│   ├── blueprints/
-│   │   └── bot_runner.py   # Bot Runner blueprint
-│   └── storage/
-├── docs/                   # Документация
-├── examples/               # Примеры ботов
-├── tests/                  # Тесты
-└── docker-compose.bot-runner.yml
+После запуска orchestrator + worker:
+
+```bash
+# Установите CLI
+pip install tg-runner-cli
+
+# Настройте
+export TG_RUNNER_URL=http://localhost:8000
+export TG_RUNNER_TOKEN=test-client-token
+
+# Запустите бота
+tg-runner start my-bot --simple bot.py -r "aiogram>=3.0" -e "BOT_TOKEN=123:ABC"
+
+# Проверьте
+tg-runner list
+tg-runner logs my-bot
+tg-runner stop my-bot
 ```
 
 ---
@@ -176,8 +162,6 @@ MIT License
 ---
 
 <div align="center">
-
-**[⬆ Наверх](#-tg-runner-orchestrator)**
 
 Made with ❤️ by [TimaxLacs](https://github.com/TimaxLacs)
 
